@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Jev Minesweeper — typed probabilities, one cell at a time</title>
+		<link
+			rel="icon"
+			href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23070b12'/%3E%3Ctext x='16' y='23' font-size='20' text-anchor='middle' fill='%2338e0b0'%3E%E2%88%B5%3C/text%3E%3C/svg%3E"
+		/>
+		<link rel="stylesheet" href="/styles.css" />
+	</head>
+	<body>
+		<header class="topbar">
+			<div class="brand">
+				<span class="logo">∵</span>
+				<div>
+					<h1>Jev Minesweeper</h1>
+					<p class="subtitle">
+						Jev answers P(mine) for every hidden cell in one call — code decides where to dig
+					</p>
+				</div>
+			</div>
+			<div class="topbar-right">
+				<span id="mode-badge" class="badge badge-muted">connecting…</span>
+				<span id="model-badge" class="badge badge-muted">—</span>
+			</div>
+		</header>
+
+		<main class="layout">
+			<section class="stage">
+				<div class="board-wrap">
+					<div id="board" class="ms-board"></div>
+					<div id="overlay" class="overlay hidden">
+						<h2 id="overlay-title">Ready</h2>
+						<p id="overlay-text"></p>
+					</div>
+				</div>
+
+				<div class="controls">
+					<button id="new" class="btn">⟲ New board</button>
+					<button id="step" class="btn btn-primary">▶ Jev digs</button>
+					<div class="segmented" role="group" aria-label="Driver">
+						<button id="mode-jev" class="seg active">Jev plays</button>
+						<button id="mode-you" class="seg">You play</button>
+					</div>
+					<label class="select">
+						Board
+						<select id="size"></select>
+					</label>
+					<label class="select">
+						Difficulty
+						<select id="difficulty"></select>
+					</label>
+					<label class="select">
+						Jev style
+						<select id="persona">
+							<option value="cautious">Cautious</option>
+							<option value="bold">Bold</option>
+						</select>
+					</label>
+				</div>
+				<p class="hint">
+					Each Jev move is one call: a
+					<strong>Noul</strong>
+					per hidden cell ("is this a mine?") answered in parallel. Code plays any cell local constraints can
+					prove (
+					<span class="mono">solver</span>
+					); Jev's probabilities are used for the genuine guesses (
+					<span class="mono">model</span>
+					). The
+					<em>cautious</em>
+					style only digs when P(mine) is very low and otherwise flags the likeliest mine; the
+					<em>bold</em>
+					style digs through more risk. Click to reveal, right-click to flag when you play.
+				</p>
+			</section>
+
+			<aside class="panel">
+				<div class="stat-grid">
+					<div class="stat">
+						<span class="stat-label">Mines</span>
+						<span id="stat-mines" class="stat-value">10</span>
+					</div>
+					<div class="stat">
+						<span class="stat-label">Flags</span>
+						<span id="stat-flags" class="stat-value">0</span>
+					</div>
+					<div class="stat">
+						<span class="stat-label">Moves</span>
+						<span id="stat-moves" class="stat-value">0</span>
+					</div>
+					<div class="stat">
+						<span class="stat-label">Last latency</span>
+						<span id="stat-latency" class="stat-value">—</span>
+					</div>
+				</div>
+
+				<section class="card">
+					<header class="card-head">
+						<h3>Jev's last answer</h3>
+						<span id="gate-badge" class="badge badge-muted">idle</span>
+					</header>
+					<div id="answers" class="answers"><p class="muted">Let Jev dig to see its probabilities.</p></div>
+				</section>
+
+				<section class="card">
+					<header class="card-head">
+						<h3>Cell risk map</h3>
+						<label class="toggle">
+							<input id="heat" type="checkbox" checked />
+							show
+						</label>
+					</header>
+					<p class="muted">
+						Hidden cells are tinted by Jev's P(mine). This is the model's uncertainty made visible.
+					</p>
+				</section>
+
+				<section class="card">
+					<header class="card-head">
+						<h3>Cost</h3>
+						<span class="muted" id="price-label">$0.042 / 1M input tokens, output free</span>
+					</header>
+					<div class="cost">
+						<span class="stat-value" id="cost-total">$0.000000</span>
+						<span class="muted" id="cost-detail">0 tokens</span>
+					</div>
+				</section>
+
+				<section class="card">
+					<header class="card-head">
+						<h3>Inspect the wire</h3>
+						<button id="inspect-toggle" class="btn btn-small">Show request + answer</button>
+					</header>
+					<pre id="inspect" class="inspect hidden"></pre>
+				</section>
+			</aside>
+		</main>
+
+		<footer class="footer">
+			<span>
+				Jev = TypeSafe's System One model. State + typed questions in, typed answers + probabilities out.
+			</span>
+		</footer>
+
+		<script src="/app.js" type="module"></script>
+	</body>
+</html>
