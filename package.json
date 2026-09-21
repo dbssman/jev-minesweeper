@@ -11,6 +11,7 @@
 		"start": "node server.mjs",
 		"dev": "node server.mjs",
 		"test": "node --test",
-		"eval": "node run.mjs"
+		"eval": "node run.mjs",
+		"ablate": "node ablate.mjs"
 	}
 }

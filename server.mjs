@@ -162,28 +162,33 @@ async function handleDecide(request, response) {
 		return
 	}
 
-	// Hybrid (default): if deduction decides, answer without calling Jev at all —
-	// that is the whole point of putting the solver first (fewer tokens).
+	// Modes:
+	//  hybrid — always ask Jev (so it gets full context and the risk map), but let
+	//           the solver's proof win the play; `lean` skips the call when solved.
+	//  jev    — always ask Jev and let it play (no solver override).
 	const decider = body?.decider === 'jev' ? 'jev' : 'hybrid'
-	if (decider === 'hybrid') {
-		const proven = solverOnlyMove(game)
-		if (proven) {
-			sendJson(response, 200, {
-				mode: 'solver',
-				model: 'local-solver',
-				latencyMs: 0,
-				usage: { input_tokens: 0, output_tokens: 0 },
-				decision: proven,
-				probabilities: [],
-				persona,
-				decider,
-			})
-			return
-		}
+	const educated = body?.educated !== false
+	const lean = body?.lean === true
+	const proven = decider === 'hybrid' ? solverOnlyMove(game) : null
+
+	if (decider === 'hybrid' && lean && proven) {
+		sendJson(response, 200, {
+			mode: 'solver',
+			model: 'local-solver',
+			latencyMs: 0,
+			usage: { input_tokens: 0, output_tokens: 0 },
+			decision: proven,
+			probabilities: [],
+			persona,
+			decider,
+			educated,
+			lean,
+		})
+		return
 	}
 
-	const state = buildMineState(game, persona)
-	const { questions, cells } = buildMineQuestions(game)
+	const state = buildMineState(game, persona, { educated })
+	const { questions, cells } = buildMineQuestions(game, { educated })
 	try {
 		const result = await callJev({
 			apiKey: ENV.apiKey,
@@ -193,12 +198,13 @@ async function handleDecide(request, response) {
 			apiUrl: API_URL,
 			timeoutMs: REQUEST_TIMEOUT_MS,
 		})
-		// Need a guess: Jev's probabilities decide, behind the persona thresholds.
-		const decision = composeMineMove(game, result.answers, cells, persona) ?? {
-			...baselineMove(game),
-			gate: 'fallback',
-			reason: 'No usable probabilities from Jev; baseline took over.',
-		}
+		// Solver proof wins in hybrid mode; otherwise Jev's probabilities decide.
+		const decision = proven ??
+			composeMineMove(game, result.answers, cells, persona) ?? {
+				...baselineMove(game),
+				gate: 'fallback',
+				reason: 'No usable probabilities from Jev; baseline took over.',
+			}
 		const probabilities = cells.map(({ x, y }) => ({ x, y, p: result.answers?.[`m_${x}_${y}`]?.noul ?? null }))
 		sendJson(response, 200, {
 			mode: 'jev',
@@ -209,6 +215,9 @@ async function handleDecide(request, response) {
 			probabilities,
 			persona,
 			decider,
+			educated,
+			lean,
+			solverOverride: Boolean(proven),
 			request: { model: MODEL, state, questions },
 		})
 	} catch (error) {
@@ -224,6 +233,8 @@ async function handleDecide(request, response) {
 			probabilities: [],
 			persona,
 			decider,
+			educated,
+			lean,
 			error: error.message,
 		})
 	}

@@ -1,7 +1,17 @@
 // Everything that talks to TypeSafe's Jev, plus the code-owned policy that
 // turns Jev's probabilities into a move. Server-side only.
 
-import { hiddenCells, inBounds, isRevealed, neighbors, remainingMines, render } from './engine.mjs'
+import {
+	adjacentMineCount,
+	hiddenCells,
+	inBounds,
+	isFlagged,
+	isHidden,
+	isRevealed,
+	neighbors,
+	remainingMines,
+	render,
+} from './engine.mjs'
 
 /** Cap on Noul questions per call: keeps large boards fast and cheap. */
 export const MAX_QUESTIONS_PER_CALL = 60
@@ -27,13 +37,19 @@ export const PERSONAS = {
 		flagThreshold: 0.85,
 	},
 }
-export function buildMineState(game, persona) {
+const RULES =
+	'Minesweeper rules: every revealed number N counts the N mines among its up-to-8 neighbours. A hidden cell is PROVABLY SAFE if some adjacent revealed number N already has N flagged neighbours. A hidden cell is PROVABLY A MINE if some adjacent revealed number N has (hidden neighbours + flagged neighbours) = N and (N - flagged neighbours) is exactly the number of hidden neighbours. Otherwise the cell is UNCERTAIN and must be estimated.'
+
+const STRATEGY =
+	'Strategy: first look for a provably safe cell and reveal it; if none, flag a provably-mine cell; only guess when nothing is provable, and then prefer the hidden cell next to the smallest numbers. Each question includes `local_constraints` giving, for every revealed number adjacent to the cell, its number and how many of its neighbours are flagged or hidden — use those counts instead of counting yourself.'
+
+export function buildMineState(game, persona, { educated = true } = {}) {
 	const profile = PERSONAS[persona] ?? PERSONAS.cautious
 	const hiddenCount = hiddenCells(game).length
 	const unplacedMines = Math.max(0, game.mineCount - game.flags.size)
-	return {
+	const state = {
 		board: render(game),
-		legend: '`board` rows are y (top to bottom), columns are x (left to right). ? = hidden, F = flagged, _ = revealed with no adjacent mines, 1-8 = revealed with that many adjacent mines. Read the numbers around a cell directly from the board.',
+		legend: '`board` rows are y (top to bottom), columns are x (left to right). ? = hidden, F = flagged, _ = revealed with no adjacent mines, 1-8 = revealed with that many adjacent mines.',
 		width: game.width,
 		height: game.height,
 		mineCount: game.mineCount,
@@ -44,8 +60,31 @@ export function buildMineState(game, persona) {
 		naiveMineProbability: hiddenCount > 0 ? Number((unplacedMines / hiddenCount).toFixed(3)) : 0,
 		playingStyle: profile.style,
 	}
+	if (educated) {
+		state.rules = RULES
+		state.strategy = STRATEGY
+	}
+	return state
 }
 
+/** For each revealed number next to (x,y): the number and its flagged/hidden neighbour counts. */
+function localConstraints(game, x, y) {
+	const constraints = []
+	for (const [nx, ny] of neighbors(x, y)) {
+		if (!inBounds(game, nx, ny) || !isRevealed(game, nx, ny)) continue
+		const number = adjacentMineCount(game, nx, ny)
+		if (number === 0) continue
+		let flagged = 0
+		let hidden = 0
+		for (const [ax, ay] of neighbors(nx, ny)) {
+			if (!inBounds(game, ax, ay)) continue
+			if (isFlagged(game, ax, ay)) flagged += 1
+			else if (isHidden(game, ax, ay)) hidden += 1
+		}
+		constraints.push({ number_at: [nx, ny], number, flagged_neighbours: flagged, hidden_neighbours: hidden })
+	}
+	return constraints
+}
 /** Hidden cells that touch at least one revealed cell: where probabilities are informative. */
 export function frontierCells(game) {
 	return hiddenCells(game).filter(({ x, y }) =>
@@ -56,7 +95,10 @@ export function frontierCells(game) {
 /** One short Noul per queryable cell: P(that cell is a mine), all in a single call.
  * The board (with its numbers) lives in the shared state, so each question is a
  * one-line string rather than a repeated neighbour array. */
-export function buildMineQuestions(game, { maxQuestions = MAX_QUESTIONS_PER_CALL, minQuestions = 12 } = {}) {
+export function buildMineQuestions(
+	game,
+	{ maxQuestions = MAX_QUESTIONS_PER_CALL, minQuestions = 12, educated = true } = {},
+) {
 	const hidden = hiddenCells(game)
 	const frontier = frontierCells(game)
 	const frontierKeys = new Set(frontier.map((c) => `${c.x},${c.y}`))
@@ -67,11 +109,14 @@ export function buildMineQuestions(game, { maxQuestions = MAX_QUESTIONS_PER_CALL
 	const cells = pool.slice(0, maxQuestions)
 	const questions = {}
 	for (const { x, y } of cells) {
-		// No per-cell criteria: the board (with its numbers) is in the shared state,
-		// so each question stays a single short line.
 		questions[`m_${x}_${y}`] = {
 			type: 'noul',
-			instructions: `In \`board\`, is the hidden cell at column ${x}, row ${y} a mine? Use the revealed numbers around it.`,
+			instructions: educated
+				? {
+						question: `Is the hidden cell at column ${x}, row ${y} a mine? Apply the rules and strategy to its \`local_constraints\`.`,
+						local_constraints: localConstraints(game, x, y),
+					}
+				: `In \`board\`, is the hidden cell at column ${x}, row ${y} a mine? Use the revealed numbers around it.`,
 		}
 	}
 	return { questions, cells, totalHidden: hidden.length, frontier: frontier.length }

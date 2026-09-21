@@ -65,27 +65,47 @@ there to trade cost/latency against coverage.
 
 The **Decider** selector makes this explicit:
 
-- **Solver + Jev** (default): code plays anything the local constraints prove (`solver`) and does
-  **not call Jev at all** for those moves; Jev's probabilities decide only the genuine guesses
-  (`model` / `forced`). On a lucky board that means zero tokens.
-- **Jev only**: Jev is called on every single move so you can watch it play unassisted.
+- **Solver + Jev** (default): Jev is asked on **every** move — with the Minesweeper rules, the
+  strategy, and the local neighbour counts, so it always has full context — but a move the local
+  constraints can prove is played by code (`solver`). Jev's probabilities decide the genuine guesses
+  (`model` / `forced`).
+- **Jev only**: Jev is asked every move and plays it itself, no solver override.
+
+An API-only `lean` flag skips the call when the solver proves a move, if you care about tokens more
+than the live risk map.
 
 The **Who decided** panel tags every move (`solver` / `Jev` / `forced` / `you`) and keeps a running
 tally, so it is always clear whether the solver or the model chose.
 
-1. Solver-first: if local constraints prove a safe cell or a mine, code plays it — no call.
-2. Otherwise Jev's `Noul` probabilities decide (`model` / `forced`), filtered by the persona
-   thresholds.
-
-Only step 2 depends on the model, which is exactly where probabilities add value over arithmetic.
-
 ### Token use
 
-The board (with its numbers) lives once in the shared `state`, so each question is a single short
-line rather than a repeated neighbour array, and only the informative **frontier** cells (those
-touching a revealed number) are asked. A 12×12 mid-game move that needs a guess costs ~1,100 input
-tokens (~$0.000047); the same move used to cost ~6,200 before this. Moves the solver decides cost
-nothing.
+The board lives once in the shared `state`; only the informative **frontier** cells are asked. A
+guessing move costs ~1,100 input tokens with the compact question, or ~3,700 with the educated
+prompt (rules + per-cell constraint counts) — both far below the ~6,200 the first version sent, when
+every question repeated an 8-neighbour array.
+
+### Does a better prompt make Jev play well? (measured)
+
+`node ablate.mjs --games 6` runs an ablation on fixed boards against the ground-truth mine map:
+
+```
+variant    cells  acc@0.5  provable  prov.acc  uncertain  unc.acc  unc.avgP
+compact    96     0.66     25        0.28      71         0.79     0.37
+educated   96     0.71     25        0.44      71         0.80     0.20
+Choice probe: boards with a provably-safe cell 3/6, picked a provably-safe cell 0/3
+```
+
+- Teaching the prompt the rules and handing it the neighbour counts **helps** — provably-solvable
+  cells went from 28% to 44% correct, and the uncertain answers moved toward the base rate
+  (avg `P(mine)` 0.37 → 0.20).
+- But a reasoning player gets **100%** of the provable cells, and asking "which cell is safest?" as a
+  single `Choice` never picked the provably-safe cell (0/3).
+- `acc@0.5` near 0.8 looks fine only because most cells are not mines; predicting "safe" everywhere
+  scores that too. The informative number is `prov.acc`.
+
+**Conclusion:** the prompt matters at the margin, but Minesweeper's constraint deduction is a
+capability limit here, not just a wording problem. The honest value of this demo is that the board
+state, the rules, and the probabilities are all inspectable — and that code owns the deduction.
 
 ## Evaluate Jev
 

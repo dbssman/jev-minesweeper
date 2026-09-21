@@ -69,15 +69,16 @@
 				</div>
 				<p class="hint">
 					<strong>Solver + Jev</strong>
-					(default): code plays any cell the local constraints prove (
+					(default): Jev is asked on every move with the Minesweeper rules and the local counts, so it always
+					has full context and the risk map is live; code plays any cell the constraints prove (
 					<span class="mono">solver</span>
-					, no model call), and Jev's typed probabilities decide only the genuine guesses (
+					), and Jev's typed probabilities decide the genuine guesses (
 					<span class="mono">model</span>
 					/
 					<span class="mono">forced</span>
-					) — so it sends Jev fewer requests.
+					).
 					<strong>Jev only</strong>
-					calls Jev on every move so you can watch it play unassisted. The
+					lets Jev play every move itself. The
 					<em>cautious</em>
 					style only digs when P(mine) is very low and otherwise flags the likeliest mine; the
 					<em>bold</em>
