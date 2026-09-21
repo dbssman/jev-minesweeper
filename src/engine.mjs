@@ -40,7 +40,7 @@ function parseKey(key) {
 	return { x, y }
 }
 
-function mulberry32(seed) {
+export function mulberry32(seed) {
 	let state = seed >>> 0
 	return function next() {
 		state |= 0
@@ -167,7 +167,8 @@ export function reveal(game, x, y) {
 		}
 	}
 
-	if (game.revealed.size === game.width * game.height - game.mineCount) game.won = true
+	// Compare against mines actually placed: tiny boards can place fewer than mineCount.
+	if (game.revealed.size === game.width * game.height - game.mines.size) game.won = true
 	return { ok: true, mine: false }
 }
 

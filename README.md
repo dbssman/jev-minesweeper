@@ -93,8 +93,12 @@ baseline               4       3        0.75    27.8        0
 
 Calibration of P(mine):
 bin        n     predicted   actual
+------------------------------------------
+0.2-0.3    36    0.27        0.61
 0.3-0.4    954   0.36        0.23
 0.4-0.5    836   0.43        0.26
+0.5-0.6    22    0.52        0.09
+0.6-0.7    3     0.64        0.00
 ```
 
 Read that honestly, it is the interesting part:
@@ -103,10 +107,11 @@ Read that honestly, it is the interesting part:
   and it loses every board — a general decision model's probability estimate is not a solver.
 - **Deduction is what wins.** `jev:cautious` and `baseline` both reach 3/4 because code proves most
   cells; on these seeds the solver needed Jev only twice.
-- **`P(mine)` is only roughly calibrated here and over-estimates mines** (predicted 0.36 → actual
-  0.23). Samples are also correlated (the same cells are re-asked as the board evolves), so treat
-  the table as a sanity check, not a calibrated reliability curve. More boards and independent
-  samples would be needed to make a real claim.
+- **`P(mine)` is only roughly calibrated here.** The bulk of the mass (predicted 0.36 → actual 0.23,
+  predicted 0.43 → actual 0.26) over-estimates mines, and the small low bin runs the other way
+  (predicted 0.27 → actual 0.61). Samples are also correlated (the same cells are re-asked as the
+  board evolves), so treat the table as a sanity check, not a calibrated reliability curve. More
+  boards and independent samples would be needed to make a real claim.
 
 Two personas share a seed, so run `jev:cautious` vs `jev:bold` (or `:pure`) and compare their
 `solved` columns to see how the code thresholds change behaviour.
