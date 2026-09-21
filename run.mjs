@@ -9,7 +9,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 
-import { createGame, flag, isMine, reveal, serialize } from './src/engine.mjs'
+import { createGame, ensureOpened, flag, isMine, reveal, serialize } from './src/engine.mjs'
 import { baselineMove, randomMove, solverOnlyMove } from './src/baseline.mjs'
 import {
 	API_URL_DEFAULT,
@@ -17,6 +17,7 @@ import {
 	PERSONAS,
 	buildMineQuestions,
 	buildMineState,
+	calibrationBins,
 	callJev,
 	composeMineMove,
 	formatCalibration,
@@ -82,6 +83,7 @@ function isPure(policy) {
 
 async function playSeed(policy, seed, options, apiKey) {
 	const game = createGame({ width: options.width, height: options.height, mineCount: options.mines, seed })
+	ensureOpened(game)
 	const rng = mulberry32(seed * 7919 + 13)
 	const calibration = []
 	const maxMoves = options.width * options.height * 4
@@ -96,28 +98,35 @@ async function playSeed(policy, seed, options, apiKey) {
 			decision = randomMove(game, rng)
 		} else if (isJev(policy)) {
 			const persona = personaOf(policy)
-			const state = buildMineState(game, persona)
-			const { questions, cells } = buildMineQuestions(game)
-			try {
-				const result = await callJev({
-					apiKey,
-					state,
-					questions,
-					model: options.model,
-					apiUrl: options.apiUrl ?? API_URL_DEFAULT,
-					timeoutMs: options.timeoutMs ?? 20000,
-				})
-				jevCalls += 1
-				for (const { x, y } of cells) {
-					const p = result.answers?.[`m_${x}_${y}`]?.noul
-					if (typeof p === 'number') calibration.push({ p, actual: isMine(game, x, y) })
+			// Deduction first: only genuine guesses cost a Jev call, which also keeps
+			// the calibration table focused on cases where probability matters.
+			const proven = isPure(policy) ? null : solverOnlyMove(game)
+			if (proven) {
+				decision = proven
+			} else {
+				const state = buildMineState(game, persona)
+				const { questions, cells } = buildMineQuestions(game)
+				try {
+					const result = await callJev({
+						apiKey,
+						state,
+						questions,
+						model: options.model,
+						apiUrl: options.apiUrl ?? API_URL_DEFAULT,
+						timeoutMs: options.timeoutMs ?? 20000,
+					})
+					jevCalls += 1
+					for (const { x, y } of cells) {
+						const p = result.answers?.[`m_${x}_${y}`]?.noul
+						if (typeof p === 'number') calibration.push({ p, actual: isMine(game, x, y) })
+					}
+					decision = composeMineMove(game, result.answers, cells, persona) ?? baselineMove(game)
+				} catch (error) {
+					decision = baselineMove(game)
+					decision = decision
+						? { ...decision, gate: 'fallback', reason: `Jev failed: ${error.message}` }
+						: null
 				}
-				const composed = composeMineMove(game, result.answers, cells, persona) ?? baselineMove(game)
-				const proven = isPure(policy) ? null : solverOnlyMove(game)
-				decision = proven ?? composed
-			} catch (error) {
-				decision = baselineMove(game)
-				decision = decision ? { ...decision, gate: 'fallback', reason: `Jev failed: ${error.message}` } : null
 			}
 		}
 		if (!decision) break
@@ -226,7 +235,7 @@ async function main() {
 			avgMoves: list.reduce((sum, r) => sum + r.moves, 0) / list.length,
 			jevCalls: list.reduce((sum, r) => sum + r.jevCalls, 0),
 		})),
-		calibration: samples.length > 0 ? samples.length : 0,
+		calibration: calibrationBins(samples),
 		results,
 	}
 	const outPath = options.out ?? path.join('reports', `minesweeper-${Date.now()}.json`)

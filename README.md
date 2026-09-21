@@ -9,6 +9,8 @@ game _is_ a probability estimate — and Jev answers it natively.
 Each move, in **one request**, Jev answers a `Noul` for every hidden cell: _"is this cell a mine?"_
 That is a full probability map in a single parallel call. Application code then owns the move.
 
+![Jev Minesweeper](docs/screenshot.png)
+
 ```text
 board (revealed numbers, flags) ──► Jev: one Noul per hidden cell = P(mine)
                                           │  all answers in one parallel call
@@ -75,11 +77,39 @@ node run.mjs --games 8 --policy jev:cautious --policy jev:bold --policy baseline
 Plays the same seeded boards with each policy, then prints solve rate and — for the Jev policies —
 a reliability table for `P(mine)`. A JSON report is written to `reports/`. `baseline` is a
 deterministic local-constraint solver used both as a comparison and as Jev's fallback when a call
-fails.
+fails. Add `:pure` (e.g. `jev:cautious:pure`) to skip the solver and let Jev guess every move.
 
-This is where "Jev vs Jev" becomes meaningful: the two personas share the seed, so their solve rates
-on identical boards are comparable, and the baseline shows whether Jev's probabilities actually
-beat arithmetic.
+`Jev vs Jev` is meaningful here because the two personas share the seed, so their solve rates are
+comparable, and the baseline shows whether Jev's probabilities beat arithmetic.
+
+### Sample result (9×9, 10 mines, 4 shared seeds)
+
+```
+policy                 games   solved   rate    avg moves   jev calls
+jev:cautious:pure      4       0        0.00    9.5         38
+jev:bold:pure          4       0        0.00    2.5         10
+jev:cautious           4       3        0.75    26.3        2
+baseline               4       3        0.75    27.8        0
+
+Calibration of P(mine):
+bin        n     predicted   actual
+0.3-0.4    954   0.36        0.23
+0.4-0.5    836   0.43        0.26
+```
+
+Read that honestly, it is the interesting part:
+
+- **Jev alone does not solve Minesweeper.** `:pure` modes let Jev's own `P(mine)` pick every cell,
+  and it loses every board — a general decision model's probability estimate is not a solver.
+- **Deduction is what wins.** `jev:cautious` and `baseline` both reach 3/4 because code proves most
+  cells; on these seeds the solver needed Jev only twice.
+- **`P(mine)` is only roughly calibrated here and over-estimates mines** (predicted 0.36 → actual
+  0.23). Samples are also correlated (the same cells are re-asked as the board evolves), so treat
+  the table as a sanity check, not a calibrated reliability curve. More boards and independent
+  samples would be needed to make a real claim.
+
+Two personas share a seed, so run `jev:cautious` vs `jev:bold` (or `:pure`) and compare their
+`solved` columns to see how the code thresholds change behaviour.
 
 ## The personas (code, not prompt-only)
 

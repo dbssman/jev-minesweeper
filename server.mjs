@@ -9,7 +9,7 @@ import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { deserialize, render, serialize } from './src/engine.mjs'
+import { deserialize, ensureOpened, render, serialize } from './src/engine.mjs'
 import { baselineMove, solverOnlyMove } from './src/baseline.mjs'
 import {
 	API_URL_DEFAULT,
@@ -137,6 +137,9 @@ async function serveFile(response, rootDir, relativePath) {
 async function handleDecide(request, response) {
 	const body = await readBody(request)
 	const game = deserialize(body?.state ?? {})
+	// Guarantee mines exist before any question is asked, so the probability map
+	// and the browser's first decision are made on a real board.
+	ensureOpened(game)
 	const persona = Object.hasOwn(PERSONAS, body?.persona) ? body.persona : 'cautious'
 
 	if (game.lost || game.won) {

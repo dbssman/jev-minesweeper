@@ -52,10 +52,15 @@ function mulberry32(seed) {
 }
 
 export function createGame({ width = 9, height = 9, mineCount = 10, seed = 1 } = {}) {
+	const safeWidth = Math.max(2, Math.min(40, Math.floor(Number(width) || 9)))
+	const safeHeight = Math.max(2, Math.min(40, Math.floor(Number(height) || 9)))
+	const maxMines = Math.max(1, safeWidth * safeHeight - 9)
+	const requestedMines = Number.isFinite(Number(mineCount)) ? Math.floor(Number(mineCount)) : 10
+	const safeMines = Math.max(0, Math.min(maxMines, requestedMines))
 	return {
-		width,
-		height,
-		mineCount,
+		width: safeWidth,
+		height: safeHeight,
+		mineCount: safeMines,
 		seed,
 		mines: new Set(),
 		revealed: new Set(),
@@ -164,6 +169,14 @@ export function reveal(game, x, y) {
 
 	if (game.revealed.size === game.width * game.height - game.mineCount) game.won = true
 	return { ok: true, mine: false }
+}
+
+/** Place mines and open the board with a guaranteed-safe centre reveal, so the
+ * very first decision (and its calibration label) is made on a real board. */
+export function ensureOpened(game) {
+	if (game.minesPlaced) return false
+	reveal(game, Math.floor(game.width / 2), Math.floor(game.height / 2))
+	return true
 }
 
 export function flag(game, x, y) {

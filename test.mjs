@@ -1,7 +1,17 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { adjacentMineCount, cellKey, createGame, flag, isMine, isRevealed, minesFor, reveal } from './src/engine.mjs'
+import {
+	adjacentMineCount,
+	cellKey,
+	createGame,
+	ensureOpened,
+	flag,
+	isMine,
+	isRevealed,
+	minesFor,
+	reveal,
+} from './src/engine.mjs'
 import { analyze, baselineMove } from './src/baseline.mjs'
 import { MAX_QUESTIONS_PER_CALL, buildMineQuestions, calibrationBins, composeMineMove } from './src/jev.mjs'
 
@@ -129,6 +139,22 @@ test('a uniform board does not spend flags', () => {
 	const move = composeMineMove(game, answers, cells, 'cautious')
 	assert.equal(move.action, 'reveal')
 	assert.equal(move.gate, 'forced')
+})
+
+test('ensureOpened places mines and opens the board safely', () => {
+	const game = createGame({ width: 9, height: 9, mineCount: 10, seed: 5 })
+	assert.equal(game.minesPlaced, false)
+	assert.equal(ensureOpened(game), true)
+	assert.equal(game.minesPlaced, true)
+	assert.ok(game.revealed.size > 0)
+	assert.equal(game.lost, false)
+	assert.equal(ensureOpened(game), false)
+})
+
+test('createGame clamps absurd dimensions', () => {
+	const game = createGame({ width: 100000, height: 100000, mineCount: 5, seed: 1 })
+	assert.ok(game.width <= 40 && game.height <= 40)
+	assert.ok(game.mineCount >= 1)
 })
 
 test('minesFor scales with size and difficulty and leaves a safe opening', () => {

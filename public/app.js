@@ -3,6 +3,7 @@ import {
 	SIZES,
 	adjacentMineCount,
 	createGame,
+	ensureOpened,
 	flag,
 	isFlagged,
 	isMine,
@@ -46,6 +47,7 @@ function newGame() {
 		mineCount,
 		seed: Math.floor(Math.random() * 1e9),
 	})
+	ensureOpened(state.game)
 	state.running = false
 	state.gameOver = false
 	state.probabilities = []

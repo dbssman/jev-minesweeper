@@ -173,12 +173,13 @@ export async function callJev({
 				body: JSON.stringify({ model, state, questions }),
 				signal: AbortSignal.timeout(timeoutMs),
 			})
-			const latencyMs = Math.round(performance.now() - started)
 			if (response.status === 429 || response.status === 529 || response.status >= 500) {
 				lastError = new Error(`TypeSafe ${response.status}`)
 				continue
 			}
 			const payload = await response.json().catch(() => ({}))
+			// Measured after the body is read, so it reflects the real round-trip.
+			const latencyMs = Math.round(performance.now() - started)
 			if (!response.ok) {
 				const detail =
 					payload?.detail?.message ??
