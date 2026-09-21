@@ -59,13 +59,13 @@ function parseEnv(contents) {
 
 function loadEnvironment() {
 	const fileEnv = {}
-	for (const file of [path.join(__dirname, '.env'), path.resolve(__dirname, '../../.env')]) {
-		try {
-			const parsed = parseEnv(readFileSync(file, 'utf8'))
-			for (const [name, value] of Object.entries(parsed)) if (!(name in fileEnv)) fileEnv[name] = value
-		} catch {
-			/* file not present */
-		}
+	// Only the repo-local .env: this is a standalone project, so do not pick up a
+	// key from an unrelated parent directory.
+	try {
+		const parsed = parseEnv(readFileSync(path.join(__dirname, '.env'), 'utf8'))
+		for (const [name, value] of Object.entries(parsed)) if (!(name in fileEnv)) fileEnv[name] = value
+	} catch {
+		/* file not present */
 	}
 	for (const name of CONSUMED_ENV_KEYS) {
 		if (!process.env[name] && fileEnv[name]) process.env[name] = fileEnv[name]
