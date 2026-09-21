@@ -162,6 +162,26 @@ async function handleDecide(request, response) {
 		return
 	}
 
+	// Hybrid (default): if deduction decides, answer without calling Jev at all —
+	// that is the whole point of putting the solver first (fewer tokens).
+	const decider = body?.decider === 'jev' ? 'jev' : 'hybrid'
+	if (decider === 'hybrid') {
+		const proven = solverOnlyMove(game)
+		if (proven) {
+			sendJson(response, 200, {
+				mode: 'solver',
+				model: 'local-solver',
+				latencyMs: 0,
+				usage: { input_tokens: 0, output_tokens: 0 },
+				decision: proven,
+				probabilities: [],
+				persona,
+				decider,
+			})
+			return
+		}
+	}
+
 	const state = buildMineState(game, persona)
 	const { questions, cells } = buildMineQuestions(game)
 	try {
@@ -173,16 +193,12 @@ async function handleDecide(request, response) {
 			apiUrl: API_URL,
 			timeoutMs: REQUEST_TIMEOUT_MS,
 		})
-		// Code takes any move local constraints can prove; Jev's probabilities are
-		// used only where deduction runs out (the genuine guesses).
-		const composed = composeMineMove(game, result.answers, cells, persona)
-		const proven = solverOnlyMove(game)
-		const decision = proven ??
-			composed ?? {
-				...baselineMove(game),
-				gate: 'fallback',
-				reason: 'No usable probabilities from Jev; baseline took over.',
-			}
+		// Need a guess: Jev's probabilities decide, behind the persona thresholds.
+		const decision = composeMineMove(game, result.answers, cells, persona) ?? {
+			...baselineMove(game),
+			gate: 'fallback',
+			reason: 'No usable probabilities from Jev; baseline took over.',
+		}
 		const probabilities = cells.map(({ x, y }) => ({ x, y, p: result.answers?.[`m_${x}_${y}`]?.noul ?? null }))
 		sendJson(response, 200, {
 			mode: 'jev',
@@ -192,6 +208,7 @@ async function handleDecide(request, response) {
 			decision,
 			probabilities,
 			persona,
+			decider,
 			request: { model: MODEL, state, questions },
 		})
 	} catch (error) {
@@ -206,6 +223,7 @@ async function handleDecide(request, response) {
 				: null,
 			probabilities: [],
 			persona,
+			decider,
 			error: error.message,
 		})
 	}

@@ -41,9 +41,16 @@
 					<button id="new" class="btn">⟲ New board</button>
 					<button id="step" class="btn btn-primary">▶ Jev digs</button>
 					<div class="segmented" role="group" aria-label="Driver">
-						<button id="mode-jev" class="seg active">Jev plays</button>
-						<button id="mode-you" class="seg">You play</button>
+						<button id="mode-jev" class="seg active">Auto</button>
+						<button id="mode-you" class="seg">You</button>
 					</div>
+					<label class="select">
+						Decider
+						<select id="decider">
+							<option value="hybrid">Solver + Jev</option>
+							<option value="jev">Jev only</option>
+						</select>
+					</label>
 					<label class="select">
 						Board
 						<select id="size"></select>
@@ -61,15 +68,16 @@
 					</label>
 				</div>
 				<p class="hint">
-					Each Jev move is one call: a
-					<strong>Noul</strong>
-					per hidden cell ("is this a mine?") answered in parallel. Code plays any cell local constraints can
-					prove (
+					<strong>Solver + Jev</strong>
+					(default): code plays any cell the local constraints prove (
 					<span class="mono">solver</span>
-					); Jev's probabilities are used for the genuine guesses (
+					, no model call), and Jev's typed probabilities decide only the genuine guesses (
 					<span class="mono">model</span>
-					). The browser asks Jev every move so the risk map stays current; the eval harness skips the call
-					when deduction already decides. The
+					/
+					<span class="mono">forced</span>
+					) — so it sends Jev fewer requests.
+					<strong>Jev only</strong>
+					calls Jev on every move so you can watch it play unassisted. The
 					<em>cautious</em>
 					style only digs when P(mine) is very low and otherwise flags the likeliest mine; the
 					<em>bold</em>
@@ -96,6 +104,14 @@
 						<span id="stat-latency" class="stat-value">—</span>
 					</div>
 				</div>
+
+				<section class="card">
+					<header class="card-head">
+						<h3>Who decided</h3>
+						<span id="control-tally" class="muted">Solver 0 · Jev 0</span>
+					</header>
+					<div id="control-feed" class="feed"><span class="muted">No moves yet.</span></div>
+				</section>
 
 				<section class="card">
 					<header class="card-head">

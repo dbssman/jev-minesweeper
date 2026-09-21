@@ -1,19 +1,10 @@
 // Everything that talks to TypeSafe's Jev, plus the code-owned policy that
 // turns Jev's probabilities into a move. Server-side only.
 
-import {
-	adjacentMineCount,
-	cellContext,
-	hiddenCells,
-	inBounds,
-	isRevealed,
-	neighbors,
-	remainingMines,
-	render,
-} from './engine.mjs'
+import { hiddenCells, inBounds, isRevealed, neighbors, remainingMines, render } from './engine.mjs'
 
 /** Cap on Noul questions per call: keeps large boards fast and cheap. */
-export const MAX_QUESTIONS_PER_CALL = 120
+export const MAX_QUESTIONS_PER_CALL = 60
 
 export const MODEL_DEFAULT = 'jev-latest'
 export const API_URL_DEFAULT = 'https://api.typesafe.ai/v1/systemone'
@@ -42,56 +33,48 @@ export function buildMineState(game, persona) {
 	const unplacedMines = Math.max(0, game.mineCount - game.flags.size)
 	return {
 		board: render(game),
-		legend: '`board` rows are y (top to bottom), columns are x (left to right). ? = hidden, F = flagged, _ = revealed with no adjacent mines, 1-8 = revealed with that many adjacent mines.',
+		legend: '`board` rows are y (top to bottom), columns are x (left to right). ? = hidden, F = flagged, _ = revealed with no adjacent mines, 1-8 = revealed with that many adjacent mines. Read the numbers around a cell directly from the board.',
 		width: game.width,
 		height: game.height,
 		mineCount: game.mineCount,
 		flagsPlaced: game.flags.size,
 		hiddenCount,
-		// The base rate if a cell had no local information. Useful as an anchor so
-		// the model does not over-estimate on an empty board.
+		// The base rate if a cell had no local information, so the model does not
+		// over-estimate on an empty board.
 		naiveMineProbability: hiddenCount > 0 ? Number((unplacedMines / hiddenCount).toFixed(3)) : 0,
 		playingStyle: profile.style,
 	}
 }
 
-/** How much a cell's neighbours constrain it (revealed numbers are informative). */
-function infoScore(game, x, y) {
-	let score = 0
-	for (const [nx, ny] of neighbors(x, y)) {
-		if (!inBounds(game, nx, ny) || !isRevealed(game, nx, ny)) continue
-		score += 1
-		if (adjacentMineCount(game, nx, ny) > 0) score += 2
-	}
-	return score
+/** Hidden cells that touch at least one revealed cell: where probabilities are informative. */
+export function frontierCells(game) {
+	return hiddenCells(game).filter(({ x, y }) =>
+		neighbors(x, y).some(([nx, ny]) => inBounds(game, nx, ny) && isRevealed(game, nx, ny)),
+	)
 }
 
-/** One Noul per hidden cell: P(that cell is a mine). All asked in a single call.
- * On large boards the most constrained cells are asked first, capped per call. */
-export function buildMineQuestions(game, { maxQuestions = MAX_QUESTIONS_PER_CALL } = {}) {
+/** One short Noul per queryable cell: P(that cell is a mine), all in a single call.
+ * The board (with its numbers) lives in the shared state, so each question is a
+ * one-line string rather than a repeated neighbour array. */
+export function buildMineQuestions(game, { maxQuestions = MAX_QUESTIONS_PER_CALL, minQuestions = 12 } = {}) {
 	const hidden = hiddenCells(game)
-	const cells =
-		hidden.length <= maxQuestions
-			? hidden
-			: [...hidden]
-					.sort((a, b) => infoScore(game, b.x, b.y) - infoScore(game, a.x, a.y) || a.y - b.y || a.x - b.x)
-					.slice(0, maxQuestions)
+	const frontier = frontierCells(game)
+	const frontierKeys = new Set(frontier.map((c) => `${c.x},${c.y}`))
+	const interior = hidden.filter((c) => !frontierKeys.has(`${c.x},${c.y}`))
+	// Frontier cells are where the numbers constrain an answer; interior cells are
+	// base-rate, added only to keep a floor of options on a sparse board.
+	const pool = frontier.length >= minQuestions ? frontier : [...frontier, ...interior]
+	const cells = pool.slice(0, maxQuestions)
 	const questions = {}
 	for (const { x, y } of cells) {
+		// No per-cell criteria: the board (with its numbers) is in the shared state,
+		// so each question stays a single short line.
 		questions[`m_${x}_${y}`] = {
 			type: 'noul',
-			instructions: {
-				question: `Is the hidden cell at column ${x}, row ${y} a mine?`,
-				cell: { column: x, row: y },
-				neighbors: cellContext(game, x, y),
-			},
-			criteria: {
-				true: 'The cell contains a mine.',
-				false: 'The cell is safe to reveal.',
-			},
+			instructions: `In \`board\`, is the hidden cell at column ${x}, row ${y} a mine? Use the revealed numbers around it.`,
 		}
 	}
-	return { questions, cells, totalHidden: hidden.length }
+	return { questions, cells, totalHidden: hidden.length, frontier: frontier.length }
 }
 
 export function composeMineMove(game, answers, cells, persona) {

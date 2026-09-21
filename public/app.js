@@ -19,12 +19,15 @@ const $ = (id) => document.getElementById(id)
 const state = {
 	game: null,
 	mode: 'jev', // 'jev' | 'you'
+	decider: 'hybrid', // 'hybrid' | 'jev'
 	persona: 'cautious',
 	running: false,
 	loopToken: 0,
 	probabilities: [],
 	lastPayload: null,
 	moves: 0,
+	tally: { solver: 0, jev: 0, forced: 0, fallback: 0 },
+	moveSources: [],
 	usage: { input_tokens: 0, output_tokens: 0 },
 	pricePerMillionInputUsd: 0.042,
 	latencyMs: 0,
@@ -53,6 +56,8 @@ function newGame() {
 	state.probabilities = []
 	state.lastPayload = null
 	state.moves = 0
+	state.tally = { solver: 0, jev: 0, forced: 0, fallback: 0, you: 0 }
+	state.moveSources = []
 	state.usage = { input_tokens: 0, output_tokens: 0 }
 	state.latencyMs = 0
 	buildGrid()
@@ -60,6 +65,7 @@ function newGame() {
 	hideOverlay()
 	render()
 	updateStats()
+	renderControl()
 }
 
 function buildGrid() {
@@ -129,14 +135,17 @@ function onCellClick(x, y) {
 	if (state.mode !== 'you' || state.gameOver) return
 	if (isFlagged(state.game, x, y) || isRevealed(state.game, x, y)) return
 	reveal(state.game, x, y)
+	recordHuman('reveal', x, y)
 	afterMove()
 }
 
 function onCellFlag(x, y) {
 	if (state.mode !== 'you' || state.gameOver) return
 	if (isRevealed(state.game, x, y)) return
+	const action = isFlagged(state.game, x, y) ? 'unflag' : 'flag'
 	if (isFlagged(state.game, x, y)) unflag(state.game, x, y)
 	else flag(state.game, x, y)
+	recordHuman(action, x, y)
 	afterMove()
 }
 
@@ -153,6 +162,57 @@ function afterMove() {
 	if (state.game.won || state.game.lost) finish()
 }
 
+const SOURCE_LABELS = { solver: 'solver', jev: 'Jev', forced: 'forced', fallback: 'fallback', you: 'you' }
+
+function recordMove(data) {
+	const decision = data.decision ?? {}
+	const source =
+		data.mode === 'solver'
+			? 'solver'
+			: decision.gate === 'model'
+				? 'jev'
+				: decision.gate === 'forced'
+					? 'forced'
+					: decision.gate === 'fallback'
+						? 'fallback'
+						: 'jev'
+	pushSource(source, decision.action, decision.x, decision.y)
+}
+
+function recordHuman(action, x, y) {
+	pushSource('you', action, x, y)
+}
+
+function pushSource(source, action, x, y) {
+	state.tally[source] = (state.tally[source] ?? 0) + 1
+	state.moveSources.push({ source, action, x, y })
+	if (state.moveSources.length > 24) state.moveSources.shift()
+	renderControl()
+}
+
+function renderControl() {
+	const tally = $('control-tally')
+	if (tally) {
+		const parts = [`Solver ${state.tally.solver}`, `Jev ${state.tally.jev}`]
+		if (state.tally.forced) parts.push(`forced ${state.tally.forced}`)
+		if (state.tally.fallback) parts.push(`fallback ${state.tally.fallback}`)
+		tally.textContent = parts.join(' · ')
+	}
+	const feed = $('control-feed')
+	if (!feed) return
+	if (state.moveSources.length === 0) {
+		feed.innerHTML = '<span class="muted">No moves yet.</span>'
+		return
+	}
+	feed.innerHTML = state.moveSources
+		.map((m) => {
+			const who = SOURCE_LABELS[m.source] ?? m.source
+			const verb = m.action === 'flag' ? '⚑' : 'dig'
+			return `<span class="chip chip-${m.source}">${escapeHtml(who)} ${verb} ${m.x ?? '?'},${m.y ?? '?'}</span>`
+		})
+		.join('')
+}
+
 async function jevStep() {
 	if (state.gameOver) return
 	const token = state.loopToken
@@ -160,7 +220,7 @@ async function jevStep() {
 		const response = await fetch('/api/decide', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ state: serialize(state.game), persona: state.persona }),
+			body: JSON.stringify({ state: serialize(state.game), persona: state.persona, decider: state.decider }),
 		})
 		const data = await response.json()
 		if (token !== state.loopToken) return
@@ -177,6 +237,7 @@ async function jevStep() {
 			state.usage.output_tokens += data.usage.output_tokens ?? 0
 		}
 		renderAnswers(data)
+		recordMove(data)
 		applyDecision(data.decision)
 		afterMove()
 		if (state.gameOver || !state.running) return
@@ -338,6 +399,9 @@ function bindControls() {
 	$('mode-you').addEventListener('click', () => setMode('you'))
 	$('persona').addEventListener('change', (event) => {
 		state.persona = event.target.value
+	})
+	$('decider').addEventListener('change', (event) => {
+		state.decider = event.target.value
 	})
 	$('heat').addEventListener('change', (event) => {
 		state.showHeat = event.target.checked

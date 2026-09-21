@@ -22,8 +22,9 @@ board (revealed numbers, flags) ──► Jev: one Noul per hidden cell = P(mine
 
 - **Calibrated probability as the output.** The reliability of `P(mine)` is measurable: the eval
   harness bins predictions against outcomes and prints a reliability table.
-- **High fan-out in one call.** A 9×9 board needs up to 81 independent questions; adding them
-  barely changes latency because they are evaluated in parallel.
+- **One call, many typed questions.** Every informative cell is a separate `Noul`, all evaluated in
+  parallel in a single request, so adding questions barely changes latency. Only the frontier cells
+  are asked, and the board is sent once, which keeps the payload small.
 - **The model judges, code decides.** The `cautious` and `bold` personas are code thresholds over
   Jev's probabilities; the model never chooses the action itself.
 
@@ -60,13 +61,31 @@ Large boards would need up to 256 questions per move, so the client asks at most
 `MAX_QUESTIONS_PER_CALL` (120 in `src/jev.mjs`), most-constrained cells first. Raise or lower it
 there to trade cost/latency against coverage.
 
-### How a move is chosen
+### Who decides (and what it costs)
 
-1. If local constraints prove a safe cell or a mine, code plays it (`solver`) — no guessing.
+The **Decider** selector makes this explicit:
+
+- **Solver + Jev** (default): code plays anything the local constraints prove (`solver`) and does
+  **not call Jev at all** for those moves; Jev's probabilities decide only the genuine guesses
+  (`model` / `forced`). On a lucky board that means zero tokens.
+- **Jev only**: Jev is called on every single move so you can watch it play unassisted.
+
+The **Who decided** panel tags every move (`solver` / `Jev` / `forced` / `you`) and keeps a running
+tally, so it is always clear whether the solver or the model chose.
+
+1. Solver-first: if local constraints prove a safe cell or a mine, code plays it — no call.
 2. Otherwise Jev's `Noul` probabilities decide (`model` / `forced`), filtered by the persona
    thresholds.
 
 Only step 2 depends on the model, which is exactly where probabilities add value over arithmetic.
+
+### Token use
+
+The board (with its numbers) lives once in the shared `state`, so each question is a single short
+line rather than a repeated neighbour array, and only the informative **frontier** cells (those
+touching a revealed number) are asked. A 12×12 mid-game move that needs a guess costs ~1,100 input
+tokens (~$0.000047); the same move used to cost ~6,200 before this. Moves the solver decides cost
+nothing.
 
 ## Evaluate Jev
 
